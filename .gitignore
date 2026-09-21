@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# PyTorch model
+*.pt
+*.pth
+*.ckpt
+
+# Dataset
+data/
+datasets/
+
+# IDE
+.idea/
+.vscode/
+
+# Environment
+.env
+
+# OS
+.DS_Store
