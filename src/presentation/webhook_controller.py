@@ -4,7 +4,7 @@ from src.application.review_service import ReviewService
 
 router = APIRouter(prefix="/webhook", tags=["Webhook"])
 
-@router.post("/webhook/github")
+@router.post("/github")
 async def handle_github_webhook(
     payload: GitHubWebhookPayload,
     background_tasks: BackgroundTasks,
