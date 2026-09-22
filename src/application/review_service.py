@@ -1,4 +1,4 @@
-from src.application.review_graph import review_graph
+# 1. 최상단에서 review_graph import를 제거합니다.
 from src.infrastructure.cache.redis_client import RedisCacheManager
 from src.infrastructure.clients.github_client import GitHubClient
 from src.infrastructure.persistence.database import ReviewRepository
@@ -10,6 +10,9 @@ class ReviewService:
         self.github_client = GitHubClient()
 
     async def process_review(self, repo_name: str, pr_id: int, commit_sha: str):
+        # 2. 실제로 리뷰 함수가 백그라운드에서 실행될 때 review_graph를 import (Lazy Loading)
+        from src.application.review_graph import review_graph
+
         # 1. PostgreSQL DB에 시작 상태(PENDING) 기록
         history_id = ReviewRepository.create_history(repo_name, pr_id, commit_sha)
 

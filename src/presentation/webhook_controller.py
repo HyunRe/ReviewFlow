@@ -3,7 +3,6 @@ from src.presentation.dto import GitHubWebhookPayload
 from src.application.review_service import ReviewService
 
 router = APIRouter(prefix="/webhook", tags=["Webhook"])
-review_service = ReviewService()
 
 @router.post("/webhook/github")
 async def handle_github_webhook(
@@ -18,6 +17,9 @@ async def handle_github_webhook(
         repo_name = payload.repository["full_name"]
         pr_id = payload.pull_request.number
         commit_sha = payload.pull_request.head["sha"]
+
+        # 지연 로딩: 함수 내부에서 생성하거나 백그라운드 태스크 내부에서 서비스 인스턴스를 생성
+        review_service = ReviewService()
 
         background_tasks.add_task(
             review_service.process_review,
