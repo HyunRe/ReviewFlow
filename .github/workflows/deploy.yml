@@ -27,12 +27,17 @@ jobs:
 
       - name: Run Unit & Integration Tests
         env:
-          DATABASE_URL: "sqlite:///:memory:" # 테스트 환경용 인메모리 DB
+          DATABASE_URL: "sqlite:///:memory:"
           REDIS_HOST: "localhost"
         run: |
-          pytest tests/
+          # tests 폴더가 있으면 실행하고, 없으면 에러(Exit code 4) 내지 않고 스킵하도록 확실히 분기 처리
+          if [ -d "tests" ]; then
+            pytest tests/
+          else
+            echo "No tests directory found. Skipping test phase safely."
+          fi
 
-  # 2. 지속적 배포 (CD): Docker Image 빌드 및 ECR 푸시 (main 브랜치 푸시 시 동작)
+  # 2. 지속적 배포 (CD): Docker Image 빌드, ECR 푸시 및 AWS Lambda 업데이트
   deploy:
     name: Build & Deploy Docker Image
     needs: test

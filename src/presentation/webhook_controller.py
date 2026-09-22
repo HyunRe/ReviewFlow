@@ -1,11 +1,11 @@
-from fastapi import FastAPI, BackgroundTasks, Header
+from fastapi import APIRouter, BackgroundTasks, Header
 from src.presentation.dto import GitHubWebhookPayload
 from src.application.review_service import ReviewService
 
-app = FastAPI(title="ReviewFlow AI Agent")
+router = APIRouter(prefix="/webhook", tags=["Webhook"])
 review_service = ReviewService()
 
-@app.post("/webhook/github")
+@router.post("/webhook/github")
 async def handle_github_webhook(
     payload: GitHubWebhookPayload,
     background_tasks: BackgroundTasks,
