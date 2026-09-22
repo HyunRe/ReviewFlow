@@ -1,0 +1,105 @@
+name: ReviewFlow CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  # 1. 지속적 통합 (CI): Pytest 검증
+  test:
+    name: Run Pytest Suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Unit & Integration Tests
+        env:
+          DATABASE_URL: "sqlite:///:memory:"
+          REDIS_HOST: "localhost"
+        run: |
+          # tests 폴더가 있으면 실행하고, 없으면 에러(Exit code 4) 내지 않고 스킵하도록 확실히 분기 처리
+          if [ -d "tests" ]; then
+            pytest tests/
+          else
+            echo "No tests directory found. Skipping test phase safely."
+          fi
+
+  # 2. 지속적 배포 (CD): Docker Image 빌드, ECR 푸시 및 AWS Lambda 업데이트
+  deploy:
+    name: Build & Deploy Docker Image
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, Tag, and Push Docker Image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: reviewflow
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      # 3. AWS Lambda 함수 이미지 업데이트 및 환경변수 동기화
+      - name: Update Lambda Function Code and Config
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDIS_HOST: ${{ secrets.REDIS_HOST }}
+          REDIS_PORT: ${{ secrets.REDIS_PORT }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          # 1) 최신 ECR 이미지로 Lambda 함수 코드 업데이트
+          aws lambda update-function-code \
+            --function-name reviewflow-agent \
+            --image-uri ${{ steps.login-ecr.outputs.registry }}/reviewflow:latest
+      
+          # 2) Lambda 실행 상태 대기 (업데이트 진행 중 재설정 오류 방지)
+          aws lambda wait function-updated \
+            --function-name reviewflow-agent
+      
+          # 3) GitHub Secrets 값들을 Lambda 환경변수로 동기화
+          aws lambda update-function-configuration \
+            --function-name reviewflow-agent \
+            --environment "Variables={
+              DATABASE_URL=\"$DATABASE_URL\",
+              REDIS_HOST=\"$REDIS_HOST\",
+              REDIS_PORT=\"$REDIS_PORT\",
+              REDIS_PASSWORD=\"$REDIS_PASSWORD\",
+              OPENAI_API_KEY=\"$OPENAI_API_KEY\",
+              ANTHROPIC_API_KEY=\"$ANTHROPIC_API_KEY\",
+              GEMINI_API_KEY=\"$GEMINI_API_KEY\",
+              GITHUB_TOKEN=\"$GH_PAT\"
+            }"
