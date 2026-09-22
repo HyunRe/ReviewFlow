@@ -10,6 +10,10 @@ async def handle_github_webhook(
     background_tasks: BackgroundTasks,
     x_github_event: str = Header(None)
 ):
+    # GitHub 연결 확인용 ping 이벤트 처리
+    if x_github_event == "ping":
+        return {"status": "success", "message": "pong"}
+
     if x_github_event != "pull_request":
         return {"status": "ignored", "reason": "Not a pull_request event"}
 
