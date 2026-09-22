@@ -13,7 +13,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="ReviewFlow Agent", lifespan=lifespan)
+app = FastAPI(title="ReviewFlow Agent", lifespan=lifespan, root_path="/default")
 
 # 라우터 및 컨트롤러 연결
 app.include_router(webhook_router)
