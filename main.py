@@ -59,5 +59,14 @@ def handler(event, context):
         )
         return {"statusCode": 200, "body": "Review process completed successfully"}
 
-    # 2. 일반 API Gateway / HTTP 웹훅 요청 처리
-    return mangum_handler(event, context)
+    # 2. 일반 API Gateway / HTTP 웹훅 요청 처리 (try-except 방어막 추가)
+    try:
+        return mangum_handler(event, context)
+    except Exception as e:
+        print(f"[ERROR] Webhook processing failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "statusCode": 500,
+            "body": f"Internal Server Error: {str(e)}"
+        }
