@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Optional, Union
 import redis
 
 class RedisCacheManager:
@@ -8,7 +8,7 @@ class RedisCacheManager:
         port = int(os.getenv("REDIS_PORT", 6379))
         self.client = redis.Redis(host=host, port=port, db=0, decode_responses=True)
 
-    def get_cached_review(self, commit_sha: str) -> Optional[str]:
+    def get_cached_review(self, commit_sha: str) -> Optional[Union[str, bytes]]:
         try:
             return self.client.get(f"review:{commit_sha}")
         except Exception:

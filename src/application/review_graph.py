@@ -15,6 +15,28 @@ PRICE_PER_1K_TOKENS = {
 }
 
 
+def _get_available_model(client) -> str:
+    """현재 계정에서 지원하는 최신 Flash 모델을 탐색합니다."""
+    try:
+        models = list(client.models.list())
+        priority_keywords = ['3.5-flash', '3.6-flash', '3.1-flash-lite', 'flash']
+
+        for keyword in priority_keywords:
+            for m in models:
+                model_id = m.name.replace('models/', '')
+                if keyword in model_id.lower():
+                    print(f"[LLM] 동적 선택된 모델: {model_id}")
+                    return model_id
+
+        if models:
+            selected = models[0].name.replace('models/', '')
+            return selected
+    except Exception as e:
+        print(f"[LLM] 모델 목록 조회 실패, 기본값 사용: {e}")
+
+    return 'gemini-3.5-flash'
+
+
 def filter_diff_node(state: ReviewState) -> dict:
     compact_diff, files = DiffParser.parse(state.get("raw_diff", ""))
     return {"filtered_diff": compact_diff, "file_list": files}
@@ -71,17 +93,22 @@ def performance_review_node(state: ReviewState) -> dict:
 
 def style_review_node(state: ReviewState) -> dict:
     client = LLMFactory.get_gemini_client()
+
+    # 동적 모델 선택 함수 호출
+    selected_model = _get_available_model(client)
+
     prompt = f"코드 스타일 및 컨벤션 관점에서 코드 리뷰를 진행해줘:\n{state['filtered_diff']}"
     res = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model=selected_model,
         contents=prompt
     )
 
-    # Gemini 사용 토큰 추정치
     in_tokens = res.usage_metadata.prompt_token_count if hasattr(res, 'usage_metadata') else 500
     out_tokens = res.usage_metadata.candidates_token_count if hasattr(res, 'usage_metadata') else 500
-    cost = (in_tokens / 1000 * PRICE_PER_1K_TOKENS["gemini-2.5-flash"]["input"]) + \
-           (out_tokens / 1000 * PRICE_PER_1K_TOKENS["gemini-2.5-flash"]["output"])
+
+    # 동적으로 가져온 모델명이 Dict 키에 없을 경우 3.5-flash 단가를 기본값(fallback)으로 사용
+    price_info = PRICE_PER_1K_TOKENS.get(selected_model, PRICE_PER_1K_TOKENS["gemini-3.5-flash"])
+    cost = (in_tokens / 1000 * price_info["input"]) + (out_tokens / 1000 * price_info["output"])
 
     return {
         "style_review": res.text,
