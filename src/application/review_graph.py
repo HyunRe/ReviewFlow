@@ -11,7 +11,7 @@ redis_cache = RedisCacheManager()
 PRICE_PER_1K_TOKENS = {
     "claude-3-5-sonnet": {"input": 0.003, "output": 0.015},
     "gpt-4o": {"input": 0.0025, "output": 0.010},
-    "gemini-2.5-flash": {"input": 0.000075, "output": 0.0003}
+    "gemini-3.5-flash": {"input": 0.000075, "output": 0.0003}
 }
 
 
