@@ -5,36 +5,15 @@ from src.infrastructure.clients.llm_factory import LLMFactory
 from src.infrastructure.cache.redis_client import RedisCacheManager
 from src.infrastructure.persistence.database import ReviewRepository
 
+# 분리한 LLM 지원 모듈 import
+from src.infrastructure.clients.llm_calculator import (
+    _get_available_claude_model,
+    _get_available_gpt_model,
+    _get_available_gemini_model,
+    calculate_cost
+)
+
 redis_cache = RedisCacheManager()
-
-# 모델별 비용 단가 ($ / 1K Tokens) - 예시 단가
-PRICE_PER_1K_TOKENS = {
-    "claude-3-5-sonnet": {"input": 0.003, "output": 0.015},
-    "gpt-4o": {"input": 0.0025, "output": 0.010},
-    "gemini-3.5-flash": {"input": 0.000075, "output": 0.0003}
-}
-
-
-def _get_available_model(client) -> str:
-    """현재 계정에서 지원하는 최신 Flash 모델을 탐색합니다."""
-    try:
-        models = list(client.models.list())
-        priority_keywords = ['3.5-flash', '3.6-flash', '3.1-flash-lite', 'flash']
-
-        for keyword in priority_keywords:
-            for m in models:
-                model_id = m.name.replace('models/', '')
-                if keyword in model_id.lower():
-                    print(f"[LLM] 동적 선택된 모델: {model_id}")
-                    return model_id
-
-        if models:
-            selected = models[0].name.replace('models/', '')
-            return selected
-    except Exception as e:
-        print(f"[LLM] 모델 목록 조회 실패, 기본값 사용: {e}")
-
-    return 'gemini-3.5-flash'
 
 
 def filter_diff_node(state: ReviewState) -> dict:
@@ -51,18 +30,18 @@ def classify_diff_node(state: ReviewState) -> dict:
 
 def security_review_node(state: ReviewState) -> dict:
     client = LLMFactory.get_anthropic_client()
+    selected_model = _get_available_claude_model(client)
+
     prompt = f"보안 관점에서 코드 리뷰를 진행해줘:\n{state['filtered_diff']}"
     res = client.messages.create(
-        model="claude-3-5-sonnet-20241022",
+        model=selected_model,
         max_tokens=1000,
         messages=[{"role": "user", "content": prompt}]
     )
 
-    # 토큰 수 및 비용 계산
     in_tokens = res.usage.input_tokens
     out_tokens = res.usage.output_tokens
-    cost = (in_tokens / 1000 * PRICE_PER_1K_TOKENS["claude-3-5-sonnet"]["input"]) + \
-           (out_tokens / 1000 * PRICE_PER_1K_TOKENS["claude-3-5-sonnet"]["output"])
+    cost = calculate_cost(selected_model, in_tokens, out_tokens)
 
     return {
         "security_review": res.content[0].text,
@@ -73,16 +52,17 @@ def security_review_node(state: ReviewState) -> dict:
 
 def performance_review_node(state: ReviewState) -> dict:
     client = LLMFactory.get_openai_client()
+    selected_model = _get_available_gpt_model(client)
+
     prompt = f"성능 최적화 관점에서 코드 리뷰를 진행해줘:\n{state['filtered_diff']}"
     res = client.chat.completions.create(
-        model="gpt-4o",
+        model=selected_model,
         messages=[{"role": "user", "content": prompt}]
     )
 
     in_tokens = res.usage.prompt_tokens
     out_tokens = res.usage.completion_tokens
-    cost = (in_tokens / 1000 * PRICE_PER_1K_TOKENS["gpt-4o"]["input"]) + \
-           (out_tokens / 1000 * PRICE_PER_1K_TOKENS["gpt-4o"]["output"])
+    cost = calculate_cost(selected_model, in_tokens, out_tokens)
 
     return {
         "performance_review": res.choices[0].message.content,
@@ -93,9 +73,7 @@ def performance_review_node(state: ReviewState) -> dict:
 
 def style_review_node(state: ReviewState) -> dict:
     client = LLMFactory.get_gemini_client()
-
-    # 동적 모델 선택 함수 호출
-    selected_model = _get_available_model(client)
+    selected_model = _get_available_gemini_model(client)
 
     prompt = f"코드 스타일 및 컨벤션 관점에서 코드 리뷰를 진행해줘:\n{state['filtered_diff']}"
     res = client.models.generate_content(
@@ -105,10 +83,7 @@ def style_review_node(state: ReviewState) -> dict:
 
     in_tokens = res.usage_metadata.prompt_token_count if hasattr(res, 'usage_metadata') else 500
     out_tokens = res.usage_metadata.candidates_token_count if hasattr(res, 'usage_metadata') else 500
-
-    # 동적으로 가져온 모델명이 Dict 키에 없을 경우 3.5-flash 단가를 기본값(fallback)으로 사용
-    price_info = PRICE_PER_1K_TOKENS.get(selected_model, PRICE_PER_1K_TOKENS["gemini-3.5-flash"])
-    cost = (in_tokens / 1000 * price_info["input"]) + (out_tokens / 1000 * price_info["output"])
+    cost = calculate_cost(selected_model, in_tokens, out_tokens)
 
     return {
         "style_review": res.text,
@@ -123,10 +98,8 @@ def synthesize_node(state: ReviewState) -> dict:
     if state.get("performance_review"): summary += f"#### ⚡ Performance\n{state['performance_review']}\n\n"
     if state.get("style_review"): summary += f"#### 🎨 Code Style\n{state['style_review']}\n\n"
 
-    # 토큰/비용 소모 요약 추가
     summary += f"---\n*📊 Total Tokens: {state.get('total_tokens', 0)} | Estimated Cost: ${state.get('estimated_cost', 0.0):.4f}*"
 
-    # Redis 캐시 저장 및 PostgreSQL DB 업데이트
     redis_cache.set_review_cache(state["commit_sha"], summary)
     ReviewRepository.update_status(
         history_id=state["review_history_id"],
