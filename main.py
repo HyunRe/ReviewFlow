@@ -21,7 +21,8 @@ app = FastAPI(title="ReviewFlow Agent", lifespan=lifespan, root_path="/default")
 app.include_router(webhook_router)
 
 # FastAPI / API Gateway용 Mangum 핸들러
-mangum_handler = Mangum(app)
+# lifespan="off" 옵션을 지정하여 Mangum 내부의 잘못된 asyncio.get_event_loop() 참조 및 에러를 방지합니다.
+mangum_handler = Mangum(app, lifespan="off")
 
 
 def handler(event, context):
@@ -41,7 +42,7 @@ def handler(event, context):
         if isinstance(pr_id, str) and pr_id.isdigit():
             pr_id = int(pr_id)
 
-        # 필수값 및 타입 가드 (이 조건문을 통과하면 IDE가 repo_name: str, pr_id: int, commit_sha: str 로 인식함)
+        # 필수값 및 타입 가드
         if not isinstance(repo_name, str) or not isinstance(pr_id, int) or not isinstance(commit_sha, str):
             return {"statusCode": 400, "body": "Invalid or missing parameters (repo_name, pr_id, commit_sha)"}
 
@@ -59,7 +60,14 @@ def handler(event, context):
         )
         return {"statusCode": 200, "body": "Review process completed successfully"}
 
-    # 2. 일반 API Gateway / HTTP 웹훅 요청 처리 (try-except 방어막 추가)
+    # 2. 메인 스레드의 asyncio 이벤트 루프 유효성 보장
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    # 3. 일반 API Gateway / HTTP 웹훅 요청 처리 (try-except 방어막 추가)
     try:
         return mangum_handler(event, context)
     except Exception as e:

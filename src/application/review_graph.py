@@ -1,4 +1,7 @@
 from langgraph.graph import StateGraph, END
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from google.genai.errors import ServerError, APIError
+
 from src.domain.models import ReviewState
 from src.domain.diff_parser import DiffParser
 from src.infrastructure.clients.llm_factory import LLMFactory
@@ -14,6 +17,20 @@ from src.infrastructure.clients.llm_calculator import (
 )
 
 redis_cache = RedisCacheManager()
+
+
+# [추가] Gemini API 일시적 과부하(503, 429 등) 대비 재시도 데코레이터 함수
+@retry(
+    stop=stop_after_attempt(3),  # 최대 3회 재시도
+    wait=wait_exponential(multiplier=1, min=2, max=10),  # 2초 -> 4초 -> 최대 10초 지연 대기
+    retry=retry_if_exception_type((ServerError, APIError)),
+    reraise=True
+)
+def call_gemini_with_retry(client, model_name, contents):
+    """
+    Gemini API 호출 시 서버 에러(503, 429 등) 발생 시 지수 백오프로 재시도하는 래퍼
+    """
+    return client.models.generate_content(model=model_name, contents=contents)
 
 
 def filter_diff_node(state: ReviewState) -> dict:
@@ -76,10 +93,13 @@ def style_review_node(state: ReviewState) -> dict:
     selected_model = _get_available_gemini_model(client)
 
     prompt = f"코드 스타일 및 컨벤션 관점에서 코드 리뷰를 진행해줘:\n{state['filtered_diff']}"
-    res = client.models.generate_content(
-        model=selected_model,
-        contents=prompt
-    )
+
+    # [수정] 직접 generate_content를 호출하는 대신 재시도 래퍼 함수 적용
+    try:
+        res = call_gemini_with_retry(client, selected_model, prompt)
+    except Exception as e:
+        print(f"[WARNING] Gemini API failed after retries (503/429): {e}")
+        raise e  # 필요에 따라 예외를 던지거나 Fallback 처리 가능
 
     in_tokens = res.usage_metadata.prompt_token_count if hasattr(res, 'usage_metadata') else 500
     out_tokens = res.usage_metadata.candidates_token_count if hasattr(res, 'usage_metadata') else 500
