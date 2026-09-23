@@ -7,7 +7,8 @@ from src.presentation.dto import GitHubWebhookPayload
 router = APIRouter(prefix="/webhook", tags=["Webhook"])
 
 # AWS Lambda 클라이언트 생성
-lambda_client = boto3.client("lambda")
+AWS_REGION = os.getenv("AWS_REGION", "ap-northeast-2")
+lambda_client = boto3.client("lambda", region_name=AWS_REGION)
 
 # 백그라운드 작업을 수행할 Worker Lambda 함수명 (환경 변수 또는 기본값)
 WORKER_LAMBDA_NAME = os.getenv("WORKER_LAMBDA_NAME", "my-review-worker-lambda")
