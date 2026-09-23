@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock  # 1. AsyncMock 추가
 from fastapi.testclient import TestClient
 from main import app, handler
 
@@ -31,8 +31,10 @@ def test_handler_background_process_review_event(mock_init_db, mock_review_servi
     }
     context = {}
 
-    # Mock ReviewService 인스턴스 설정
+    # Mock ReviewService 및 Async process_review 설정
     mock_service_instance = MagicMock()
+    # 2. process_review를 AsyncMock으로 지정하여 asyncio.run() 지원
+    mock_service_instance.process_review = AsyncMock()
     mock_review_service.return_value = mock_service_instance
 
     # When: handler 실행
