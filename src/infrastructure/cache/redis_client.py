@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Union
+from typing import Optional, cast
 import redis
 
 class RedisCacheManager:
@@ -8,14 +8,9 @@ class RedisCacheManager:
         port = int(os.getenv("REDIS_PORT", 6379))
         self.client = redis.Redis(host=host, port=port, db=0, decode_responses=True)
 
-    def get_cached_review(self, commit_sha: str) -> Optional[Union[str, bytes]]:
+    def get_cached_review(self, commit_sha: str) -> Optional[str]:
         try:
-            return self.client.get(f"review:{commit_sha}")
+            res = self.client.get(f"review:{commit_sha}")
+            return cast(Optional[str], res)
         except Exception:
             return None
-
-    def set_review_cache(self, commit_sha: str, summary: str, ttl_seconds: int = 86400):
-        try:
-            self.client.setex(f"review:{commit_sha}", ttl_seconds, summary)
-        except Exception:
-            pass

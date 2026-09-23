@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from mangum import Mangum
@@ -35,15 +36,26 @@ def handler(event, context):
         pr_id = event.get("pr_id")
         commit_sha = event.get("commit_sha")
 
+        # [타입 방어 및 유효성 검증]
+        # pr_id가 str로 넘어올 가능성까지 대비해 int 변환 시도
+        if isinstance(pr_id, str) and pr_id.isdigit():
+            pr_id = int(pr_id)
+
+        # 필수값 및 타입 가드 (이 조건문을 통과하면 IDE가 repo_name: str, pr_id: int, commit_sha: str 로 인식함)
+        if not isinstance(repo_name, str) or not isinstance(pr_id, int) or not isinstance(commit_sha, str):
+            return {"statusCode": 400, "body": "Invalid or missing parameters (repo_name, pr_id, commit_sha)"}
+
         # DB 연결 초기화
         init_db()
 
-        # 리뷰 로직 실행 (최대 Lambda 타임아웃 시간까지 수행)
+        # 리뷰 로직 실행 (asyncio.run으로 비동기 코루틴 실행)
         review_service = ReviewService()
-        review_service.process_review(
-            repo_name=repo_name,
-            pr_id=pr_id,
-            commit_sha=commit_sha
+        asyncio.run(
+            review_service.process_review(
+                repo_name=repo_name,
+                pr_id=pr_id,
+                commit_sha=commit_sha
+            )
         )
         return {"statusCode": 200, "body": "Review process completed successfully"}
 
