@@ -4,15 +4,11 @@ PRICE_PER_1K_TOKENS = {
     "claude-4-6-sonnet": {"input": 0.003, "output": 0.015},
     "claude-5-sonnet": {"input": 0.003, "output": 0.015},
     "claude-4-5-haiku": {"input": 0.0008, "output": 0.004},
-    "claude-5-5-opus": {"input": 0.015, "output": 0.075},
-    "claude-5-fable": {"input": 0.003, "output": 0.015},
-    "claude-5-1-fable": {"input": 0.003, "output": 0.015},
-    "claude-3-5-sonnet-latest": {"input": 0.003, "output": 0.015},
 
     # OpenAI GPT
     "gpt-5-6-luna": {"input": 0.0025, "output": 0.010},
-    "gpt-4o": {"input": 0.0025, "output": 0.010},
-    "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
+    "gpt-5-6-luna-think": {"input": 0.0025, "output": 0.010},
+
 
     # Google Gemini
     "gemini-3.5-flash": {"input": 0.000075, "output": 0.0003},

@@ -29,6 +29,10 @@ jobs:
         env:
           DATABASE_URL: "sqlite:///:memory:"
           REDIS_HOST: "localhost"
+          AWS_DEFAULT_REGION: "ap-northeast-2"
+          AWS_REGION: "ap-northeast-2"
+          AWS_ACCESS_KEY_ID: "testing"
+          AWS_SECRET_ACCESS_KEY: "testing"
         run: |
           # tests 폴더가 있으면 실행하고, 없으면 에러(Exit code 4) 내지 않고 스킵하도록 확실히 분기 처리
           if [ -d "tests" ]; then
