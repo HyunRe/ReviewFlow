@@ -5,14 +5,15 @@ from src.infrastructure.clients.llm_factory import LLMFactory
 from src.infrastructure.cache.redis_client import RedisCacheManager
 from src.infrastructure.persistence.database import ReviewRepository
 
-redis_cache = RedisCacheManager()
+# 분리한 LLM 지원 모듈 import
+from src.infrastructure.clients.llm_calculator import (
+    _get_available_claude_model,
+    _get_available_gpt_model,
+    _get_available_gemini_model,
+    calculate_cost
+)
 
-# 모델별 비용 단가 ($ / 1K Tokens) - 예시 단가
-PRICE_PER_1K_TOKENS = {
-    "claude-3-5-sonnet": {"input": 0.003, "output": 0.015},
-    "gpt-4o": {"input": 0.0025, "output": 0.010},
-    "gemini-2.5-flash": {"input": 0.000075, "output": 0.0003}
-}
+redis_cache = RedisCacheManager()
 
 
 def filter_diff_node(state: ReviewState) -> dict:
@@ -29,18 +30,18 @@ def classify_diff_node(state: ReviewState) -> dict:
 
 def security_review_node(state: ReviewState) -> dict:
     client = LLMFactory.get_anthropic_client()
+    selected_model = _get_available_claude_model(client)
+
     prompt = f"보안 관점에서 코드 리뷰를 진행해줘:\n{state['filtered_diff']}"
     res = client.messages.create(
-        model="claude-3-5-sonnet-20241022",
+        model=selected_model,
         max_tokens=1000,
         messages=[{"role": "user", "content": prompt}]
     )
 
-    # 토큰 수 및 비용 계산
     in_tokens = res.usage.input_tokens
     out_tokens = res.usage.output_tokens
-    cost = (in_tokens / 1000 * PRICE_PER_1K_TOKENS["claude-3-5-sonnet"]["input"]) + \
-           (out_tokens / 1000 * PRICE_PER_1K_TOKENS["claude-3-5-sonnet"]["output"])
+    cost = calculate_cost(selected_model, in_tokens, out_tokens)
 
     return {
         "security_review": res.content[0].text,
@@ -51,16 +52,17 @@ def security_review_node(state: ReviewState) -> dict:
 
 def performance_review_node(state: ReviewState) -> dict:
     client = LLMFactory.get_openai_client()
+    selected_model = _get_available_gpt_model(client)
+
     prompt = f"성능 최적화 관점에서 코드 리뷰를 진행해줘:\n{state['filtered_diff']}"
     res = client.chat.completions.create(
-        model="gpt-4o",
+        model=selected_model,
         messages=[{"role": "user", "content": prompt}]
     )
 
     in_tokens = res.usage.prompt_tokens
     out_tokens = res.usage.completion_tokens
-    cost = (in_tokens / 1000 * PRICE_PER_1K_TOKENS["gpt-4o"]["input"]) + \
-           (out_tokens / 1000 * PRICE_PER_1K_TOKENS["gpt-4o"]["output"])
+    cost = calculate_cost(selected_model, in_tokens, out_tokens)
 
     return {
         "performance_review": res.choices[0].message.content,
@@ -71,17 +73,17 @@ def performance_review_node(state: ReviewState) -> dict:
 
 def style_review_node(state: ReviewState) -> dict:
     client = LLMFactory.get_gemini_client()
+    selected_model = _get_available_gemini_model(client)
+
     prompt = f"코드 스타일 및 컨벤션 관점에서 코드 리뷰를 진행해줘:\n{state['filtered_diff']}"
     res = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model=selected_model,
         contents=prompt
     )
 
-    # Gemini 사용 토큰 추정치
     in_tokens = res.usage_metadata.prompt_token_count if hasattr(res, 'usage_metadata') else 500
     out_tokens = res.usage_metadata.candidates_token_count if hasattr(res, 'usage_metadata') else 500
-    cost = (in_tokens / 1000 * PRICE_PER_1K_TOKENS["gemini-2.5-flash"]["input"]) + \
-           (out_tokens / 1000 * PRICE_PER_1K_TOKENS["gemini-2.5-flash"]["output"])
+    cost = calculate_cost(selected_model, in_tokens, out_tokens)
 
     return {
         "style_review": res.text,
@@ -96,10 +98,8 @@ def synthesize_node(state: ReviewState) -> dict:
     if state.get("performance_review"): summary += f"#### ⚡ Performance\n{state['performance_review']}\n\n"
     if state.get("style_review"): summary += f"#### 🎨 Code Style\n{state['style_review']}\n\n"
 
-    # 토큰/비용 소모 요약 추가
     summary += f"---\n*📊 Total Tokens: {state.get('total_tokens', 0)} | Estimated Cost: ${state.get('estimated_cost', 0.0):.4f}*"
 
-    # Redis 캐시 저장 및 PostgreSQL DB 업데이트
     redis_cache.set_review_cache(state["commit_sha"], summary)
     ReviewRepository.update_status(
         history_id=state["review_history_id"],
